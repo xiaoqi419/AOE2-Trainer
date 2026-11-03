@@ -4,6 +4,8 @@
 
 公开的 C# 源码用于审阅修改器逻辑。Windows x64 且安装 .NET Framework 4.x 的机器可在 PowerShell 中运行 `./Build.ps1`，输出位于 `build/AoE2DE.Plus12.exe`。脚本只调用系统自带的 C# 编译器，不下载依赖。
 
+本地持续开关版还需 `ContinuousInstantModes.cs`。运行 `./Test.ps1` 可编译并执行回归测试，覆盖开关、持续写入、精确还原、玩家归属及界面语言切换。测试只操作测试进程自行分配的内存，不连接游戏进行修改；界面预览位于 `build/instant-mode-ui.png`。
+
 仓库**不包含**图标及封面素材。默认构建仍可运行，但使用系统默认图标且左侧封面留空。若你拥有可用的 ICO 和 PNG，可用 `./Build.ps1 -IconPath <绝对ICO路径> -CoverPath <绝对PNG路径>` 嵌入自己的素材。
 
 GitHub Release 中的 EXE 使用了额外图像素材并经过 Obfuscar 2.2.50 混淆；由于素材没有公开，公开源码无法逐字节复现该 EXE。请根据 README 的 SHA-256 校验发布文件。公开源码不包含原版 FLiNG 程序、游戏文件、诊断内存转储或扫描结果。
@@ -11,6 +13,8 @@ GitHub Release 中的 EXE 使用了额外图像素材并经过 Obfuscar 2.2.50 �
 ## English
 
 The published C# source is provided for inspecting the trainer logic. On Windows x64 with .NET Framework 4.x, run `./Build.ps1` in PowerShell. It writes `build/AoE2DE.Plus12.exe` and only invokes the local C# compiler; it downloads no dependencies.
+
+The local continuous-toggle build also requires `ContinuousInstantModes.cs`. Run `./Test.ps1` for toggle, persistent-write, exact-restore, ownership, hotkey, and language-rebuild tests. Memory tests use allocations owned by the test process, never a game process. The rendered UI preview is written to `build/instant-mode-ui.png`.
 
 The repository does **not** include the icon or cover art. The default build remains functional but uses the system icon and has a blank cover panel. If you have your own ICO and PNG, run `./Build.ps1 -IconPath <absolute ICO path> -CoverPath <absolute PNG path>` to embed them.
 

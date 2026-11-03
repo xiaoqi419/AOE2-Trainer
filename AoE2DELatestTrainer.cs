@@ -12,9 +12,9 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 
 [assembly: AssemblyTitle("Age of Empires II Definitive Edition Plus 12 Trainer V3")]
-[assembly: AssemblyDescription("Single-player trainer for AoE2DE 101.103.54800.0")]
+[assembly: AssemblyDescription("Single-player trainer for AoE2DE 101.103.54800.0 with continuous research and construction toggles")]
 [assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.4")]
+[assembly: AssemblyFileVersion("1.0.0.40")]
 
 internal static class Native
 {
@@ -89,8 +89,12 @@ internal static class Engine
                 byte[] image=Read(h,mb,p.MainModule.ModuleMemorySize);int hit=FindRootAob(image);int mov=hit+2,disp=BitConverter.ToInt32(image,mov+3);global=(ulong)((long)mb+mov+7+disp);
                 lock(CacheLock){cachedPid=p.Id;cachedModule=mb;cachedGlobal=global;cachedPlayer=0;cachedResources=0;cachedObjects.Clear();cachedObjectRegions.Clear();objectCacheTime=DateTime.MinValue;}
             }
-            ulong root=U64(h,global),player=U64(h,root+0x28),resources=U64(h,player+0x98); int playerId=I32(h,player+0x648);
-            if(root<0x10000||player<0x10000||resources<0x10000||playerId<1||playerId>8)throw new InvalidOperationException("当前不在有效的单人对局中。");
+            ulong root=U64(h,global);
+            if(root<0x10000)throw new InvalidOperationException("当前不在有效的单人对局中。");
+            ulong player=U64(h,root+0x28);
+            if(player<0x10000)throw new InvalidOperationException("当前不在有效的单人对局中。");
+            ulong resources=U64(h,player+0x98);int playerId=I32(h,player+0x648);
+            if(resources<0x10000||playerId<1||playerId>8)throw new InvalidOperationException("当前不在有效的单人对局中。");
             lock(CacheLock){bool changed=cachedPlayer!=player;cachedPid=p.Id;cachedModule=mb;cachedGlobal=global;cachedPlayer=player;cachedResources=resources;cachedPlayerId=playerId;if(changed){cachedObjects.Clear();cachedObjectRegions.Clear();objectCacheTime=DateTime.MinValue;}}
             return new GameContext{Game=p,Handle=h,ModuleBase=mb,Player=player,Resources=resources,PlayerId=playerId};
         }
@@ -217,8 +221,9 @@ internal static class Engine
         int written=0;active=0;
         foreach(ulong building in buildings)
         {
-            ulong queue,node,action;
-            if(!TryU64(c.Handle,building+BuildingQueueOffset,out queue)||queue<0x10000||
+            ulong queue,node,action,owner;
+            if(!TryU64(c.Handle,building+0x18,out owner)||owner!=c.Player||
+               !TryU64(c.Handle,building+BuildingQueueOffset,out queue)||queue<0x10000||
                !TryU64(c.Handle,queue+QueueFirstNodeOffset,out node)||node<0x10000||
                !TryU64(c.Handle,node,out action)||action<0x10000)continue;
             uint kind;
@@ -231,7 +236,8 @@ internal static class Engine
             }
             active++;
             uint raw;ulong currentAction;
-            if(!TryU32(c.Handle,action+elapsedOffset,out raw)||
+            if(!TryU64(c.Handle,building+0x18,out owner)||owner!=c.Player||
+               !TryU32(c.Handle,action+elapsedOffset,out raw)||
                !TryU64(c.Handle,node,out currentAction)||currentAction!=action)continue;
             float elapsed=BitConverter.ToSingle(BitConverter.GetBytes(raw),0);
             if(float.IsNaN(elapsed)||float.IsInfinity(elapsed)||elapsed<0||elapsed>=1000f)continue;
@@ -250,40 +256,13 @@ internal static class Engine
             return total==0?"当前没有生产队列":"当前生产队列已全部完成（处理 "+total+" 项）";
         }
     }
-    internal static string InstantResearchOnce()
+    internal static void FinishCurrentResearch(GameContext c)
     {
-        using(GameContext c=Open(true))
-        {
-            List<ulong> buildings=PlayerBuildings(c);
-            float original=Resource(c,86);
-            // Campaign scenarios may use 0 as their normal baseline while research still progresses.
-            if(float.IsNaN(original)||float.IsInfinity(original)||original<0||original>100)
-                throw new InvalidOperationException("研发速度原值未通过校验，未修改。");
-            int total=0;
-            SetResource(c,86,0.001f);
-            try
-            {
-                DateTime end=DateTime.UtcNow.AddMilliseconds(1500);
-                do
-                {
-                    int active;
-                    total+=FinishQueues(c,buildings,ResearchActionKind,ResearchElapsedOffset,1000f,out active);
-                    Thread.Sleep(25);
-                }while(DateTime.UtcNow<end);
-                return "当前研发队列已执行（直接完成 "+total+" 项）";
-            }
-            finally{SetResource(c,86,original);}
-        }
-    }
-    internal static string InstantBuildingsOnce()
-    {
-        using(GameContext c=Open(true))
-        {
-            SetResource(c,195,1000f);try{Thread.Sleep(1500);return "当前建造任务已执行";}finally{SetResource(c,195,1f);}
-        }
+        int active;
+        FinishQueues(c,PlayerBuildings(c),ResearchActionKind,ResearchElapsedOffset,1000f,out active);
     }
 
-    static float DecodeResource(ulong raw){ulong v=((raw^K1)^K2)-K3;v^=K4;return BitConverter.ToSingle(BitConverter.GetBytes((uint)v),0);}
+    internal static float DecodeResource(ulong raw){ulong v=((raw^K1)^K2)-K3;v^=K4;return BitConverter.ToSingle(BitConverter.GetBytes((uint)v),0);}
     static ulong EncodeResource(float v){ulong bits=BitConverter.ToUInt32(BitConverter.GetBytes(v),0);return (((bits^K4)+K3)^K2)^K1;}
     static float DecodeHealth(ulong raw){ulong p=unchecked((raw^HX)-HS);return BitConverter.ToSingle(BitConverter.GetBytes((uint)p),0);}
     static ulong EncodeHealth(ulong raw,float v){ulong p=unchecked((raw^HX)-HS),bits=BitConverter.ToUInt32(BitConverter.GetBytes(v),0);p=(p&0xFFFFFFFF00000000UL)|bits;return unchecked((p+HS)^HX);}
@@ -426,6 +405,14 @@ internal sealed class TrainerForm : Form
     readonly SpeedToggleSwitch soundToggle=new SpeedToggleSwitch{IsOn=true,Size=new Size(36,18)};
     readonly Image coverImage;
     readonly SpeedToggleSwitch speedToggle=new SpeedToggleSwitch();
+    readonly SpeedToggleSwitch researchToggle=new SpeedToggleSwitch(),buildingsToggle=new SpeedToggleSwitch();
+    readonly ContinuousInstantModes instantModes=new ContinuousInstantModes();
+    readonly System.Windows.Forms.Timer instantTimer=new System.Windows.Forms.Timer();
+    Task instantWorker;
+    bool researchRequested,buildingsRequested,instantBusy;
+    volatile bool closing;
+    DateTime nextResearchTick=DateTime.MinValue,nextInstantAttempt=DateTime.MinValue;
+    int instantRevision;
     readonly TextBox speedEditor=new TextBox();
     readonly NumericUpDown wood=ResourceBox(),food=ResourceBox(),gold=ResourceBox(),stone=ResourceBox(),speed=SpeedBox();
     readonly System.Windows.Forms.Timer detector=new System.Windows.Forms.Timer();
@@ -436,15 +423,18 @@ internal sealed class TrainerForm : Form
 
     internal TrainerForm()
     {
-        Text="Age of Empires II: Definitive Edition +12 Trainer V3";ClientSize=new Size(790,680);FormBorderStyle=FormBorderStyle.FixedSingle;MaximizeBox=false;StartPosition=FormStartPosition.CenterScreen;BackColor=Dark;ForeColor=Color.Gainsboro;Font=new Font("Microsoft YaHei UI",9.5f);
+        Text="Age of Empires II: Definitive Edition +12 Trainer - Continuous";ClientSize=new Size(790,680);FormBorderStyle=FormBorderStyle.FixedSingle;MaximizeBox=false;StartPosition=FormStartPosition.CenterScreen;BackColor=Dark;ForeColor=Color.Gainsboro;Font=new Font("Microsoft YaHei UI",9.5f);
         language=LanguageForCulture(CultureInfo.CurrentUICulture);
         using(Stream stream=Assembly.GetExecutingAssembly().GetManifestResourceStream("AoE.Icon"))if(stream!=null)Icon=new Icon(stream);
         using(Stream stream=Assembly.GetExecutingAssembly().GetManifestResourceStream("AoE.Cover"))if(stream!=null)using(Image image=Image.FromStream(stream))coverImage=new Bitmap(image);
         speedToggle.Click+=delegate{ToggleSpeed();};speed.ValueChanged+=delegate{speedEditor.Text=FormatSpeed();UpdateActiveSpeed();};
         soundToggle.Click+=delegate{soundToggle.IsOn=!soundToggle.IsOn;};
+        researchToggle.Click+=delegate{InstantResearchAction();};
+        buildingsToggle.Click+=delegate{InstantBuildingsAction();};
+        instantTimer.Interval=250;instantTimer.Tick+=delegate{ApplyInstantModes();};
         speedEditor.Leave+=delegate{CommitSpeedEditor();};
         speedEditor.KeyDown+=delegate(object sender,KeyEventArgs e){if(e.KeyCode==Keys.Enter){CommitSpeedEditor();e.Handled=true;e.SuppressKeyPress=true;}else if(e.KeyCode==Keys.Escape){speedEditor.Text=FormatSpeed();e.Handled=true;e.SuppressKeyPress=true;}};
-        BuildUi();detector.Interval=1000;detector.Tick+=delegate{DetectGame();};Shown+=delegate{RegisterKeys();detector.Start();DetectGame();};
+        BuildUi();detector.Interval=1000;detector.Tick+=delegate{DetectGame();};Shown+=delegate{RegisterKeys();detector.Start();instantTimer.Start();DetectGame();};
     }
 
     internal static int LanguageForCulture(CultureInfo culture)
@@ -468,12 +458,12 @@ internal sealed class TrainerForm : Form
     void BuildUi()
     {
         SuspendLayout();
-        foreach(Control reused in new Control[]{processInfo,status,hotkeyHint,soundLabel,soundToggle,speedToggle,speedEditor,wood,food,gold,stone,speed})
+        foreach(Control reused in new Control[]{processInfo,status,hotkeyHint,soundLabel,soundToggle,speedToggle,researchToggle,buildingsToggle,speedEditor,wood,food,gold,stone,speed})
             if(reused.Parent!=null)reused.Parent.Controls.Remove(reused);
         while(Controls.Count>0){Control old=Controls[0];Controls.RemoveAt(0);old.Dispose();}
         var header=new Panel{Dock=DockStyle.Top,Height=70,BackColor=Color.FromArgb(28,30,31)};Controls.Add(header);
         header.Controls.Add(new Label{Text="Age of Empires II: Definitive Edition",ForeColor=Orange,Font=new Font(Font.FontFamily,15,FontStyle.Bold),AutoSize=true,Location=new Point(68,12)});
-        header.Controls.Add(new Label{Text="v101.103.54800.0 - Build 185872 V3  Plus 12 Trainer",ForeColor=Color.Gainsboro,Font=new Font(Font.FontFamily,10,FontStyle.Bold),AutoSize=true,Location=new Point(94,39)});
+        header.Controls.Add(new Label{Text="Build 185872 V3 - Continuous Research / Buildings",ForeColor=Color.Gainsboro,Font=new Font(Font.FontFamily,10,FontStyle.Bold),AutoSize=true,Location=new Point(68,39)});
         AddLanguageSelector(header);
 
         var left=new Panel{Location=new Point(6,74),Size=new Size(220,598),BackColor=PanelColor};Controls.Add(left);
@@ -501,8 +491,8 @@ internal sealed class TrainerForm : Form
         AddRow(right,ref y,"Num 3",T("修改黄金","修改黃金","Edit Gold"),gold,delegate{SetResource(3,()=>T("黄金","黃金","Gold"),gold);});
         AddRow(right,ref y,"Num 4",T("修改石料","修改石料","Edit Stone"),stone,delegate{SetResource(2,()=>T("石料","石料","Stone"),stone);});
         AddRow(right,ref y,"Num 6",T("恢复单位与建筑生命值","恢復單位與建築生命值","Restore Units & Buildings Health"),null,RestoreHealthAction);
-        AddRow(right,ref y,"Num 7",T("瞬间研发（一次）","瞬間研發（一次）","Instant Research (Once)"),null,InstantResearchAction);
-        AddRow(right,ref y,"Num 8",T("瞬间建造（一次）","瞬間建造（一次）","Instant Buildings (Once)"),null,InstantBuildingsAction);
+        AddInstantRow(right,ref y,"Num 7",T("瞬间研发（持续／仅自己）","瞬間研發（持續／僅自己）","Instant Research - player only"),researchToggle);
+        AddInstantRow(right,ref y,"Num 8",T("瞬间建造（持续／仅自己）","瞬間建造（持續／僅自己）","Instant Buildings - player only"),buildingsToggle);
         AddRow(right,ref y,"Num 9",T("瞬间生产单位（一次）","瞬間生產單位（一次）","Instant Recruit Units (Once)"),null,InstantRecruitAction);
         AddRow(right,ref y,"Num 0",T("AI 单位与建筑设为 1 血","AI 單位與建築設為 1 血","Set AI Units & Buildings to 1 HP"),null,EmptyAiHealthAction);
         AddSpeedRow(right,ref y);
@@ -512,7 +502,7 @@ internal sealed class TrainerForm : Form
         hotkeyHint.RightToLeft=language==6?RightToLeft.Yes:RightToLeft.No;right.Controls.Add(hotkeyHint);
         status.Location=new Point(0,520);status.Size=new Size(542,54);status.BorderStyle=BorderStyle.FixedSingle;status.Padding=new Padding(8);status.ForeColor=Color.Silver;
         status.RightToLeft=language==6?RightToLeft.Yes:RightToLeft.No;right.Controls.Add(status);
-        UpdateProcessInfo();UpdateSpeedToggle();UpdateHotkeyHint();
+        UpdateProcessInfo();UpdateSpeedToggle();UpdateInstantToggles();UpdateHotkeyHint();
         if(statusMessage==null)SetStatus(()=>T("等待游戏进程……","等待遊戲進程……","Waiting for game process..."));else RenderStatus();
         ResumeLayout(true);
     }
@@ -639,6 +629,13 @@ internal sealed class TrainerForm : Form
         p.Controls.Add(new Label{Text=option,Location=new Point(178,y+3),Size=new Size(value==null?365:235,24),Font=new Font(Font.FontFamily,9.5f,FontStyle.Bold),RightToLeft=language==6?RightToLeft.Yes:RightToLeft.No,TextAlign=language==6?ContentAlignment.MiddleRight:ContentAlignment.MiddleLeft});
         if(value!=null){value.Location=new Point(420,y);p.Controls.Add(value);}y+=34;
     }
+    void AddInstantRow(Panel p,ref int y,string hotkey,string option,SpeedToggleSwitch toggle)
+    {
+        p.Controls.Add(new Label{Text=hotkey,Font=new Font(Font.FontFamily,9.5f,FontStyle.Bold),Location=new Point(5,y+4),Size=new Size(105,24)});
+        toggle.Location=new Point(118,y);p.Controls.Add(toggle);
+        p.Controls.Add(new Label{Text=option,Location=new Point(178,y+3),Size=new Size(365,24),Font=new Font(Font.FontFamily,9.5f,FontStyle.Bold),RightToLeft=language==6?RightToLeft.Yes:RightToLeft.No,TextAlign=language==6?ContentAlignment.MiddleRight:ContentAlignment.MiddleLeft});
+        y+=34;
+    }
     void SetResource(int id,Func<string> name,NumericUpDown box)
     {
         float value=(float)box.Value;
@@ -646,8 +643,83 @@ internal sealed class TrainerForm : Form
             ()=>name()+T("已设为 ","已設為 "," set to ")+value.ToString("0.##",CultureInfo.InvariantCulture));
     }
     void RestoreHealthAction(){Run(()=>T("恢复生命值","恢復生命值","Restore Health"),delegate{Engine.RestoreHealth();},()=>T("生命值恢复完成","生命值恢復完成","Health restored"));}
-    void InstantResearchAction(){Run(()=>T("瞬间研发","瞬間研發","Instant Research"),delegate{Engine.InstantResearchOnce();},()=>T("当前研发队列已完成","當前研發佇列已完成","Current research queue completed"));}
-    void InstantBuildingsAction(){Run(()=>T("瞬间建造","瞬間建造","Instant Buildings"),delegate{Engine.InstantBuildingsOnce();},()=>T("当前建造任务已完成","當前建造任務已完成","Current construction completed"));}
+    void InstantResearchAction(){researchRequested=!researchRequested;InstantRequestChanged();}
+    void InstantBuildingsAction(){buildingsRequested=!buildingsRequested;InstantRequestChanged();}
+    void InstantRequestChanged()
+    {
+        instantRevision++;nextInstantAttempt=DateTime.MinValue;
+        UpdateInstantToggles();ApplyInstantModes();
+    }
+    void UpdateInstantToggles()
+    {
+        researchToggle.IsOn=researchRequested;buildingsToggle.IsOn=buildingsRequested;
+        researchToggle.AccessibleName=T("瞬间研发开关","瞬間研發開關","Instant Research toggle");
+        buildingsToggle.AccessibleName=T("瞬间建造开关","瞬間建造開關","Instant Buildings toggle");
+    }
+    void ApplyInstantModes()
+    {
+        if(closing||instantBusy||DateTime.UtcNow<nextInstantAttempt||(!researchRequested&&!buildingsRequested&&!instantModes.Active))return;
+        bool research=researchRequested,buildings=buildingsRequested;int revision=instantRevision;
+        bool changed=research!=appliedResearch||buildings!=appliedBuildings;
+        instantBusy=true;
+        instantWorker=Task.Run(delegate
+        {
+            string error=null;
+            try
+            {
+                using(GameContext c=Engine.Open(true))
+                {
+                    try
+                    {
+                        instantModes.Update(c,research,buildings);
+                        if(research&&DateTime.UtcNow>=nextResearchTick)
+                        {
+                            nextResearchTick=DateTime.UtcNow.AddMilliseconds(500);
+                            Engine.FinishCurrentResearch(c);
+                        }
+                    }
+                    catch
+                    {
+                        instantModes.Update(c,false,false);
+                        throw;
+                    }
+                }
+            }
+            catch(Exception e)
+            {
+                error=e.Message;
+                if(error.StartsWith("当前不在有效的单人对局")||Process.GetProcessesByName("AoE2DE_s").Length==0)instantModes.Forget();
+            }
+            if(closing)return;
+            try
+            {
+                BeginInvoke((Action)delegate
+                {
+                    if(closing||IsDisposed)return;
+                    instantBusy=false;
+                    if(error!=null)
+                    {
+                        researchRequested=buildingsRequested=appliedResearch=appliedBuildings=false;
+                        instantRevision++;nextInstantAttempt=DateTime.UtcNow.AddSeconds(1);UpdateInstantToggles();
+                        SetStatus(()=>(instantModes.Active?T("关闭失败，正在重试恢复原值：","關閉失敗，正在重試恢復原值：","Restore pending; retrying: "):
+                            T("持续功能已关闭：","持續功能已關閉：","Continuous modes stopped: "))+Localization.Error(error,language),true);
+                    }
+                    else
+                    {
+                        appliedResearch=research;appliedBuildings=buildings;
+                        if(changed&&revision==instantRevision)
+                        {
+                            SetStatus(()=>T("瞬间研发：","瞬間研發：","Instant Research: ")+(research?T("开启","開啟","on"):T("关闭","關閉","off"))+
+                                T("；瞬间建造：","；瞬間建造：","; Instant Buildings: ")+(buildings?T("开启","開啟","on"):T("关闭","關閉","off")));
+                            if(research||buildings)PlaySuccessFeedback();else PlayDisableFeedback();
+                        }
+                    }
+                });
+            }
+            catch(InvalidOperationException){}
+        });
+    }
+    bool appliedResearch,appliedBuildings;
     void InstantRecruitAction(){Run(()=>T("瞬间生产单位","瞬間生產單位","Instant Recruit Units"),delegate{Engine.InstantRecruitOnce();},()=>T("当前生产队列已完成","當前生產佇列已完成","Current production queue completed"));}
     void EmptyAiHealthAction(){Run(()=>T("清空 AI 生命值","清空 AI 生命值","Empty AI Health"),delegate{Engine.EmptyAiHealth();},()=>T("AI 单位与建筑已设为 1 血","AI 單位與建築已設為 1 血","AI units and buildings set to 1 HP"));}
     void MaxPopulationAction(){Run(()=>T("最大人口","最大人口","Max Population"),delegate{Engine.SetResource(4,200);},()=>T("人口上限已设为 200","人口上限已設為 200","Population cap set to 200"));}
@@ -759,9 +831,33 @@ internal sealed class TrainerForm : Form
     }
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
-        detector.Stop();
+        detector.Stop();instantTimer.Stop();instantTimer.Dispose();
         if(speedOverrideActive)try{using(GameContext c=Engine.Open(true))if(c.Game.Id==speedPid&&c.Player==speedPlayer)Engine.SetGameSpeed(c,savedSpeed);}catch{}
         UnregisterFeatureKeys();Native.UnregisterHotKey(Handle,13);base.OnFormClosed(e);if(coverImage!=null)coverImage.Dispose();
+    }
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        closing=true;instantTimer.Stop();
+        if(instantWorker!=null)instantWorker.Wait();
+        if(instantModes.Active)
+        {
+            try{using(GameContext c=Engine.Open(true))instantModes.Update(c,false,false);}
+            catch(Exception error)
+            {
+                if(error.Message.StartsWith("当前不在有效的单人对局"))instantModes.Forget();
+                // A terminated game or replaced session has no live override to restore.
+                if(instantModes.Active&&Process.GetProcessesByName("AoE2DE_s").Length!=0)
+                {
+                    e.Cancel=true;closing=false;instantBusy=false;
+                    researchRequested=buildingsRequested=false;UpdateInstantToggles();instantTimer.Start();
+                    string detail=error.Message;
+                    SetStatus(()=>T("恢复原值失败，请保持修改器开启后重试：","恢復原值失敗，請保持修改器開啟後重試：","Restore failed; keep the trainer open and retry: ")+detail,true);
+                    return;
+                }
+            }
+        }
+        base.OnFormClosing(e);
+        if(e.Cancel){closing=false;instantBusy=false;instantTimer.Start();}
     }
     protected override void WndProc(ref Message m)
     {
