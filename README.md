@@ -15,15 +15,18 @@ This Trainer is free to use!
 | 游戏 Build | **185872** |
 | 游戏 EXE 文件版本 | **101.103.54800.0** |
 | 游戏进程 | `AoE2DE_s.exe` |
-| Fork 程序版本 | **1.0.0.41** |
-| Fork 发布标签 | `v185872-continuous.2` |
+| Fork 程序版本 | **1.0.0.42** |
+| Fork 发布标签 | `v185872-continuous.3` |
 | 运行环境 | Windows x64，.NET Framework 4.x |
 | 使用范围 | 单人游戏 / 单人战役 |
 | 其他游戏版本 | 未适配；不支持 Build 188329，不保证未来版本兼容 |
 
-**下载：[本 fork 的 Releases](https://github.com/xiaoqi419/AOE2-Trainer/releases)。** 首版标记为预发布：10 项本地回归测试通过，尚未完成真实游戏对局验证。
+**下载：[本 fork 的 Releases](https://github.com/xiaoqi419/AOE2-Trainer/releases)。** 首版标记为预发布：11 项本地回归测试通过，尚未完成真实游戏对局验证。
 
 ## 新增功能 / Fork changes
+
+- **界面重构（v1.0.0.42）**：功能按资源调整、持续开关和即时操作分组；侧栏显示版本、连接状态和使用提示。窗口布局、功能行为、自绘控件和提示音拆分为独立源码文件。
+- **个人项目入口**：软件内部“项目主页：GitHub”指向 `https://github.com/xiaoqi419/AOE2-Trainer`；上游作者署名和来源链接保留在说明中。
 
 - **内置窗口按钮（v1.0.0.41）**：移除 Windows 原生标题栏，右上角提供最小化和关闭按钮；拖动标题文字或顶部空白区域可移动窗口。最小化后持续功能继续运行；关闭仍经过原值恢复流程，恢复失败时可阻止关闭。
 
@@ -37,9 +40,9 @@ This Trainer is free to use!
 
 瞬间生产（`Num 9`）仍为一次性操作。强制结束程序无法还原数值，已完成的任务不会因关闭开关而撤销。
 
-This personal fork is based on upstream **`v185872-V3`** and targets **Build 185872 / file version 101.103.54800.0 only**. It adds independent persistent research and construction toggles, current-player ownership checks, exact value restoration, and session-change protection. Build 188329 is not supported. The first release is a **prerelease**: ten local regression tests pass, but live-game validation is still pending.
+This personal fork is based on upstream **`v185872-V3`** and targets **Build 185872 / file version 101.103.54800.0 only**. It adds independent persistent research and construction toggles, current-player ownership checks, exact value restoration, and session-change protection. Build 188329 is not supported. The first release is a **prerelease**: eleven local regression tests pass, but live-game validation is still pending.
 
-截图：本 fork 的无边框界面（测试渲染，演示开关开启状态；实际启动默认关闭）。源码构建不包含上游发布包的封面素材。
+截图：本 fork 的无边框界面（测试渲染，演示开关开启状态；实际启动默认关闭）。侧栏直接显示版本与连接信息，无需封面素材。
 
 ![Borderless continuous-toggle interface](docs/borderless-ui.png)
 
@@ -95,7 +98,7 @@ This personal fork is based on upstream **`v185872-V3`** and targets **Build 185
 
 ### Local continuous-toggle build (Build 185872 V3)
 
-Version **1.0.0.41** removes the native title bar and adds integrated minimize/close buttons. Drag the title or header background to move the window. Minimize keeps continuous features running; close uses the normal restoration path and can be cancelled if restoration fails.
+Version **1.0.0.42** groups features into resources, continuous modes and one-shot actions, replaces the cover area with useful connection information, and points the in-app GitHub link to this fork. UI code is split into focused files. It also removes the native title bar and adds integrated minimize/close buttons. Drag the title or header background to move the window. Minimize keeps continuous features running; close uses the normal restoration path and can be cancelled if restoration fails.
 
 Instant Research and Instant Buildings are now independent, default-off switches. Click a switch or press `Num 7` / `Num 8` to toggle; newly started tasks are also affected while enabled. Only the current player's values and research queues are modified. Switching off or closing normally restores the exact saved values; changing matches disables both switches. Keep the trainer running while enabled. Force termination cannot restore values, and completed tasks are not undone. Instant Recruit remains a one-shot action. This local build targets game file version `101.103.54800.0`; run `./Test.ps1` for isolated memory and UI tests.
 

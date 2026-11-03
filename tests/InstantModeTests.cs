@@ -226,11 +226,36 @@ internal static class InstantModeTests
             Assert(form.IsDisposed,"Close button did not close the form.");
         }
     }
+    static void ForkLinkAndGroupedLayout()
+    {
+        using(var form=new TrainerForm())
+        {
+            Field("closing").SetValue(form,true);
+            for(int language=0;language<10;language++)
+            {
+                Field("language").SetValue(form,language);
+                typeof(TrainerForm).GetMethod("BuildUi",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(form,null);
+                Control[] links=form.Controls.Find("projectLink",true);
+                Assert(links.Length==1,"Fork project link is missing.");
+                var link=(LinkLabel)links[0];
+                Assert(link.Links.Count==1&&Convert.ToString(link.Links[0].LinkData)=="https://github.com/xiaoqi419/AOE2-Trainer","Project link does not target the user's fork.");
+                foreach(string name in new[]{"resourcesSection","continuousSection","actionsSection"})
+                {
+                    Control[] sections=form.Controls.Find(name,true);
+                    Assert(sections.Length==1,"Missing feature group: "+name);
+                    Assert(sections[0].Parent.ClientRectangle.Contains(sections[0].Bounds),"Group is outside its container.");
+                }
+                Control process=(Control)Field("processInfo").GetValue(form);
+                Control sound=(Control)Field("soundToggle").GetValue(form);
+                Assert(!process.Bounds.IntersectsWith(sound.Bounds),"Connection status overlaps sound control.");
+            }
+        }
+    }
     [STAThread] static int Main()
     {
         Application.EnableVisualStyles();
         Action[] tests={DisabledDoesNotWrite,PersistentAndIndependentRestore,CampaignZeroAndReenable,RejectInvalidBaseline,SessionChangeNeverWritesOldAddresses,FailedRestoreCanBeRetried,ResearchQueueChecksLiveOwner,HotkeysToggleBothWays,ToggleUiAndLanguageRebuild};
-        var allTests=new System.Collections.Generic.List<Action>(tests);allTests.Add(BorderlessWindowButtons);tests=allTests.ToArray();
+        var allTests=new System.Collections.Generic.List<Action>(tests);allTests.Add(BorderlessWindowButtons);allTests.Add(ForkLinkAndGroupedLayout);tests=allTests.ToArray();
         foreach(Action test in tests)
         {
             try{test();Console.WriteLine("PASS "+test.Method.Name);}

@@ -1,7 +1,6 @@
 param(
     [string]$OutputDirectory = (Join-Path $PSScriptRoot 'build'),
-    [string]$IconPath,
-    [string]$CoverPath
+    [string]$IconPath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -32,13 +31,10 @@ if ($IconPath) {
     $arguments += "/win32icon:$icon"
     $arguments += "/resource:$icon,AoE.Icon"
 }
-if ($CoverPath) {
-    $cover = (Resolve-Path -LiteralPath $CoverPath -ErrorAction Stop).Path
-    $arguments += "/resource:$cover,AoE.Cover"
-}
 $arguments += $source
 $arguments += $localization
 $arguments += $continuous
+$arguments += @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'UI') -Filter '*.cs' -File | Sort-Object Name | ForEach-Object { $_.FullName })
 
 & $compiler @arguments
 if ($LASTEXITCODE -ne 0) { throw "Compiler failed with exit code $LASTEXITCODE" }
