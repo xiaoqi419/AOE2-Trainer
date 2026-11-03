@@ -194,10 +194,43 @@ internal static class InstantModeTests
             form.Close();
         }
     }
+    static void BorderlessWindowButtons()
+    {
+        using(var form=new TrainerForm())
+        {
+            Assert(form.FormBorderStyle==FormBorderStyle.None,"Native title bar is still enabled.");
+            Field("closing").SetValue(form,true);
+            form.ShowInTaskbar=false;form.StartPosition=FormStartPosition.Manual;form.Location=new Point(-2000,-2000);form.Show();
+            ((System.Windows.Forms.Timer)Field("instantTimer").GetValue(form)).Stop();
+            ((System.Windows.Forms.Timer)Field("detector").GetValue(form)).Stop();
+            for(int language=0;language<10;language++)
+            {
+                Field("language").SetValue(form,language);
+                typeof(TrainerForm).GetMethod("BuildUi",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(form,null);
+                Control[] minimize=form.Controls.Find("windowMinimize",true),close=form.Controls.Find("windowClose",true);
+                Assert(minimize.Length==1&&close.Length==1,"Window buttons missing after language change.");
+                Assert(close[0].Parent.ClientRectangle.Contains(close[0].Bounds)&&minimize[0].Parent.ClientRectangle.Contains(minimize[0].Bounds),"Window buttons are outside the visible header.");
+                Assert(!minimize[0].Bounds.IntersectsWith(close[0].Bounds),"Window buttons overlap.");
+                foreach(Control other in close[0].Parent.Controls)
+                    if(other!=close[0]&&other!=minimize[0])Assert(!other.Bounds.IntersectsWith(close[0].Bounds)&&!other.Bounds.IntersectsWith(minimize[0].Bounds),"Header content overlaps window buttons.");
+            }
+            ((Button)form.Controls.Find("windowMinimize",true)[0]).PerformClick();
+            Assert(form.WindowState==FormWindowState.Minimized&&!form.IsDisposed,"Minimize button did not minimize.");
+            form.WindowState=FormWindowState.Normal;
+            bool closingRaised=false;FormClosingEventHandler cancel=delegate(object sender,FormClosingEventArgs e){closingRaised=true;e.Cancel=true;};
+            form.FormClosing+=cancel;
+            ((Button)form.Controls.Find("windowClose",true)[0]).PerformClick();
+            Assert(closingRaised&&!form.IsDisposed,"Close button bypassed cancellable normal cleanup.");
+            form.FormClosing-=cancel;
+            ((Button)form.Controls.Find("windowClose",true)[0]).PerformClick();
+            Assert(form.IsDisposed,"Close button did not close the form.");
+        }
+    }
     [STAThread] static int Main()
     {
         Application.EnableVisualStyles();
         Action[] tests={DisabledDoesNotWrite,PersistentAndIndependentRestore,CampaignZeroAndReenable,RejectInvalidBaseline,SessionChangeNeverWritesOldAddresses,FailedRestoreCanBeRetried,ResearchQueueChecksLiveOwner,HotkeysToggleBothWays,ToggleUiAndLanguageRebuild};
+        var allTests=new System.Collections.Generic.List<Action>(tests);allTests.Add(BorderlessWindowButtons);tests=allTests.ToArray();
         foreach(Action test in tests)
         {
             try{test();Console.WriteLine("PASS "+test.Method.Name);}

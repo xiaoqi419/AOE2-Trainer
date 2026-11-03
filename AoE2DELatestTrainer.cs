@@ -14,7 +14,7 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("Age of Empires II Definitive Edition Plus 12 Trainer V3")]
 [assembly: AssemblyDescription("Single-player trainer for AoE2DE 101.103.54800.0 with continuous research and construction toggles")]
 [assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.40")]
+[assembly: AssemblyFileVersion("1.0.0.41")]
 
 internal static class Native
 {
@@ -398,6 +398,31 @@ internal static class AudioFeedback
     }
 }
 
+internal sealed class WindowCaptionButton : Button
+{
+    readonly bool closesWindow;
+    bool hovered;
+    internal WindowCaptionButton(bool close)
+    {
+        closesWindow=close;Size=new Size(44,32);FlatStyle=FlatStyle.Flat;FlatAppearance.BorderSize=0;
+        BackColor=Color.FromArgb(28,30,31);ForeColor=Color.Gainsboro;Cursor=Cursors.Hand;
+        SetStyle(ControlStyles.UserPaint|ControlStyles.AllPaintingInWmPaint|ControlStyles.OptimizedDoubleBuffer,true);
+    }
+    protected override void OnMouseEnter(EventArgs e){hovered=true;Invalidate();base.OnMouseEnter(e);}
+    protected override void OnMouseLeave(EventArgs e){hovered=false;Invalidate();base.OnMouseLeave(e);}
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        e.Graphics.Clear(hovered?(closesWindow?Color.FromArgb(196,43,28):Color.FromArgb(55,58,61)):BackColor);
+        float x=Width/2f,y=Height/2f;
+        using(var pen=new Pen(ForeColor,1.5f))
+        {
+            if(closesWindow){e.Graphics.DrawLine(pen,x-5,y-5,x+5,y+5);e.Graphics.DrawLine(pen,x+5,y-5,x-5,y+5);}
+            else e.Graphics.DrawLine(pen,x-6,y,x+6,y);
+        }
+        if(Focused&&ShowFocusCues)ControlPaint.DrawFocusRectangle(e.Graphics,new Rectangle(3,3,Width-6,Height-6));
+    }
+}
+
 internal sealed class TrainerForm : Form
 {
     readonly Color Dark=Color.FromArgb(30,32,34),PanelColor=Color.FromArgb(35,37,39),Orange=Color.FromArgb(255,140,0);
@@ -423,7 +448,7 @@ internal sealed class TrainerForm : Form
 
     internal TrainerForm()
     {
-        Text="Age of Empires II: Definitive Edition +12 Trainer - Continuous";ClientSize=new Size(790,680);FormBorderStyle=FormBorderStyle.FixedSingle;MaximizeBox=false;StartPosition=FormStartPosition.CenterScreen;BackColor=Dark;ForeColor=Color.Gainsboro;Font=new Font("Microsoft YaHei UI",9.5f);
+        Text="Age of Empires II: Definitive Edition +12 Trainer - Continuous";ClientSize=new Size(790,680);FormBorderStyle=FormBorderStyle.None;MaximizeBox=false;StartPosition=FormStartPosition.CenterScreen;BackColor=Dark;ForeColor=Color.Gainsboro;Font=new Font("Microsoft YaHei UI",9.5f);
         language=LanguageForCulture(CultureInfo.CurrentUICulture);
         using(Stream stream=Assembly.GetExecutingAssembly().GetManifestResourceStream("AoE.Icon"))if(stream!=null)Icon=new Icon(stream);
         using(Stream stream=Assembly.GetExecutingAssembly().GetManifestResourceStream("AoE.Cover"))if(stream!=null)using(Image image=Image.FromStream(stream))coverImage=new Bitmap(image);
@@ -462,8 +487,13 @@ internal sealed class TrainerForm : Form
             if(reused.Parent!=null)reused.Parent.Controls.Remove(reused);
         while(Controls.Count>0){Control old=Controls[0];Controls.RemoveAt(0);old.Dispose();}
         var header=new Panel{Dock=DockStyle.Top,Height=70,BackColor=Color.FromArgb(28,30,31)};Controls.Add(header);
-        header.Controls.Add(new Label{Text="Age of Empires II: Definitive Edition",ForeColor=Orange,Font=new Font(Font.FontFamily,15,FontStyle.Bold),AutoSize=true,Location=new Point(68,12)});
-        header.Controls.Add(new Label{Text="Build 185872 V3 - Continuous Research / Buildings",ForeColor=Color.Gainsboro,Font=new Font(Font.FontFamily,10,FontStyle.Bold),AutoSize=true,Location=new Point(68,39)});
+        var title=new Label{Text="Age of Empires II: Definitive Edition",ForeColor=Orange,Font=new Font(Font.FontFamily,15,FontStyle.Bold),AutoSize=true,Location=new Point(20,10)};header.Controls.Add(title);
+        var subtitle=new Label{Text="Build 185872 V3 - Continuous Research / Buildings",ForeColor=Color.Gainsboro,Font=new Font(Font.FontFamily,10,FontStyle.Bold),AutoSize=true,Location=new Point(20,40)};header.Controls.Add(subtitle);
+        EnableWindowDrag(header);EnableWindowDrag(title);EnableWindowDrag(subtitle);
+        var minimize=new WindowCaptionButton(false){Name="windowMinimize",AccessibleName=T("最小化","最小化","Minimize"),Location=new Point(694,0)};
+        var close=new WindowCaptionButton(true){Name="windowClose",AccessibleName=T("关闭","關閉","Close"),Location=new Point(738,0)};
+        minimize.Click+=delegate{WindowState=FormWindowState.Minimized;};close.Click+=delegate{Close();};
+        header.Controls.Add(minimize);header.Controls.Add(close);
         AddLanguageSelector(header);
 
         var left=new Panel{Location=new Point(6,74),Size=new Size(220,598),BackColor=PanelColor};Controls.Add(left);
@@ -507,14 +537,29 @@ internal sealed class TrainerForm : Form
         ResumeLayout(true);
     }
 
+    void EnableWindowDrag(Control surface)
+    {
+        Point startMouse=Point.Empty,startWindow=Point.Empty;bool dragging=false;
+        surface.MouseDown+=delegate(object sender,MouseEventArgs e)
+        {
+            if(e.Button!=MouseButtons.Left)return;
+            startMouse=Cursor.Position;startWindow=Location;dragging=true;surface.Capture=true;
+        };
+        surface.MouseMove+=delegate
+        {
+            if(dragging){Point current=Cursor.Position;Location=new Point(startWindow.X+current.X-startMouse.X,startWindow.Y+current.Y-startMouse.Y);}
+        };
+        surface.MouseUp+=delegate(object sender,MouseEventArgs e){if(e.Button==MouseButtons.Left){dragging=false;surface.Capture=false;}};
+        surface.MouseCaptureChanged+=delegate{if(!surface.Capture)dragging=false;};
+    }
     void AddLanguageSelector(Panel header)
     {
         // English language names A–Z; values remain stable language IDs for translations.
         int[] displayOrder={6,0,1,2,7,8,5,9,3,4};
         header.Controls.Add(new Label{Text=T("语言选择：","語言選擇：","Language:"),ForeColor=Color.Gainsboro,
-            Location=new Point(552,23),Size=new Size(88,27),TextAlign=ContentAlignment.MiddleRight,Font=new Font(Font.FontFamily,9,FontStyle.Bold)});
+            Location=new Point(552,37),Size=new Size(88,27),TextAlign=ContentAlignment.MiddleRight,Font=new Font(Font.FontFamily,9,FontStyle.Bold)});
         var selector=new ComboBox{DropDownStyle=ComboBoxStyle.DropDownList,FlatStyle=FlatStyle.Flat,
-            DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=22,MaxDropDownItems=10,Location=new Point(646,23),Size=new Size(132,27),
+            DrawMode=DrawMode.OwnerDrawFixed,ItemHeight=22,MaxDropDownItems=10,Location=new Point(646,37),Size=new Size(132,27),
             BackColor=PanelColor,ForeColor=Color.Gainsboro,Font=new Font(Font.FontFamily,9)};
         selector.Items.AddRange(new object[]{"العربية","简体中文","繁體中文","English","Français","Deutsch","日本語","한국어","Русский","Español"});
         selector.DrawItem+=delegate(object sender,DrawItemEventArgs e)
