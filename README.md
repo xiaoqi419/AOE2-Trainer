@@ -15,15 +15,28 @@ This Trainer is free to use!
 | 游戏 Build | **185872** |
 | 游戏 EXE 文件版本 | **101.103.54800.0** |
 | 游戏进程 | `AoE2DE_s.exe` |
-| Fork 程序版本 | **1.0.0.42** |
-| Fork 发布标签 | `v185872-continuous.3` |
+| Fork 程序版本 | **1.0.0.44** |
+| Fork 发布标签 | `v185872-continuous.4` |
 | 运行环境 | Windows x64，.NET Framework 4.x |
 | 使用范围 | 单人游戏 / 单人战役 |
 | 其他游戏版本 | 未适配；不支持 Build 188329，不保证未来版本兼容 |
 
-**下载：[本 fork 的 Releases](https://github.com/xiaoqi419/AOE2-Trainer/releases)。** 首版标记为预发布：11 项本地回归测试通过，尚未完成真实游戏对局验证。
+**下载：[本 fork 的 Releases](https://github.com/xiaoqi419/AOE2-Trainer/releases)。** 当前版标记为预发布：16 项本地回归测试通过，尚未完成真实游戏对局验证。
 
 ## 新增功能 / Fork changes
+
+### v1.0.0.44：跨战役自动沿用设置（预发布）
+修改器保持运行时，研究、建造、回血、生产、人口上限和倍速开关在进入新对局后自动重新应用。菜单/加载时保留选择并等待，手动关闭的项目保持关闭。每局重新捕获原始数值，绝不将上一局原值恢复到下一局。单次资源写入、AI 1 血和人口归零不自动执行。重启修改器仍默认关闭；不是磁盘持久化配置。版本或数值校验失败会停止自动启用。尚未在真实连续战役中验证。
+
+
+### v1.0.0.43：更多持续开关（预发布）
+- Num 6：持续回血开关。关闭后停止回血，已恢复的生命值不会撤销；沿用上游的 9999 HP 目标，不是读取单位真实最大生命值。
+- Num 9：持续瞬间生产开关。关闭后停止处理后续队列，已生成的单位不会撤销。
+- Num +：人口上限 200 开关。关闭或正常退出恢复开启前数值；超过 200 的原上限开启期间也会被设为 200。
+- Num 0（AI 设为 1 血）、Num -（人口归零）保留单次动作，但按钮和热键都先弹出默认取消的确认框。这两项不能可靠撤销。
+- 所有新增开关默认关闭，沿用当前玩家、会话检测和串行后台处理；切换对局保留选择并自动重新应用。
+- 本地回归测试通过，真实单人对局效果仍待验证。开关“关闭”不等于“撤销”。
+
 
 - **界面重构（v1.0.0.42）**：功能按资源调整、持续开关和即时操作分组；侧栏显示版本、连接状态和使用提示。窗口布局、功能行为、自绘控件和提示音拆分为独立源码文件。
 - **个人项目入口**：软件内部“项目主页：GitHub”指向 `https://github.com/xiaoqi419/AOE2-Trainer`；上游作者署名和来源链接保留在说明中。
@@ -35,12 +48,12 @@ This Trainer is free to use!
 - **独立开关、默认关闭**：两个功能互不影响，切换界面语言后保留开关状态。
 - **当前玩家隔离**：只写入当前玩家资源表，研究队列写入前重新校验建筑归属；代码及隔离测试覆盖 AI 排除，游戏内效果仍待验证。
 - **精确恢复**：关闭或正常退出时恢复开启前数值，包括战役自定义倍率；不再把建造倍率固定重置成 1。
-- **对局切换保护**：检测到游戏会话或玩家变化时关闭持续功能，避免向旧地址写入。
+- **对局切换保护**：检测到游戏会话或玩家变化时丢弃旧地址，保留开关选择并在新对局重新应用。
 - **回归测试**：新增 `Test.ps1`，覆盖持续写入、关闭还原、无效值拒绝、恢复重试、玩家隔离、热键、界面状态。
 
-瞬间生产（`Num 9`）仍为一次性操作。强制结束程序无法还原数值，已完成的任务不会因关闭开关而撤销。
+瞬间生产（`Num 9`）已改为持续开关，关闭不撤销已生产单位。强制结束程序无法还原数值，已完成的任务不会因关闭开关而撤销。
 
-This personal fork is based on upstream **`v185872-V3`** and targets **Build 185872 / file version 101.103.54800.0 only**. It adds independent persistent research and construction toggles, current-player ownership checks, exact value restoration, and session-change protection. Build 188329 is not supported. The first release is a **prerelease**: eleven local regression tests pass, but live-game validation is still pending.
+This personal fork is based on upstream **`v185872-V3`** and targets **Build 185872 / file version 101.103.54800.0 only**. It adds independent persistent research and construction toggles, current-player ownership checks, exact value restoration, and session-change protection. Build 188329 is not supported. This release is a **prerelease**: sixteen local regression tests pass, but live-game validation is still pending.
 
 截图：本 fork 的无边框界面（测试渲染，演示开关开启状态；实际启动默认关闭）。侧栏直接显示版本与连接信息，无需封面素材。
 
@@ -52,9 +65,9 @@ This personal fork is based on upstream **`v185872-V3`** and targets **Build 185
 
 - 瞬间研发和瞬间建造已改为持续开关，默认关闭。点击滑动开关或按 `Num 7` / `Num 8` 切换；开启后，新开始的对应任务也会加速。
 - 两项功能只修改当前玩家。研究队列在每次写入前重新核对建筑归属，AI 不会获得这两项加速。
-- 关闭开关或正常退出修改器时，恢复开启前的精确数值，保留战役原有倍率。切换对局或游戏退出后自动关闭，需在新对局重新开启。
+- 关闭开关或正常退出修改器时，恢复开启前的精确数值，保留战役原有倍率。切换对局或游戏退出后保留开关选择，进入新对局自动重新应用。
 - 持续效果需要修改器保持运行；强制结束进程无法执行还原。已完成的研究和建筑不会因关闭开关而撤销。
-- 瞬间生产仍保留原来的一次性操作。支持游戏文件版本 `101.103.54800.0`。
+- 瞬间生产已改为持续开关。支持游戏文件版本 `101.103.54800.0`。
 - `./Build.ps1` 编译，`./Test.ps1` 执行本地内存与界面回归测试；测试不会修改运行中的游戏。
 
 > **非官方说明：** 本项目参考风灵月影（FLiNG）修改器的界面风格与操作方式，主程序独立编写。它不是风灵月影官方作品，与风灵月影、Microsoft 或 World's Edge 均无隶属、合作或认可关系，请勿当作官方更新。
@@ -66,19 +79,19 @@ This personal fork is based on upstream **`v185872-V3`** and targets **Build 185
 1. 从 [Releases](https://github.com/xiaoqi419/AOE2-Trainer/releases) 下载与游戏版本对应的 EXE，并核对该版本发布说明中的 SHA-256。
 2. 启动游戏，进入**单人战局**，再以管理员身份运行修改器。主菜单中只能检测进程，进入战局后才会显示“已连接 / 就绪”。
 3. 木材、食物、黄金、石料分别输入数值并各自点击“应用”。其他功能也可用对应按钮或小键盘热键执行。
-4. “瞬间研发 / 建造”是**持续开关**；“瞬间生产”仍为**一次性操作**。
+4. “瞬间研发 / 建造”是**持续开关**；“瞬间生产”也是**持续开关**，关闭仅停止后续加速。
 5. 右上角的语言下拉菜单支持简体中文、繁體中文、English、Русский、Español、日本語、العربية、Français、Deutsch 和 한국어。启动时按系统界面语言自动选择；未适配的语言默认 English。
 
 | 热键 | 功能 |
 | --- | --- |
 | Num 1 / 2 / 3 / 4 | 分别修改木材、食物、黄金、石料 |
-| Num 6 | 恢复己方单位与建筑生命值 |
+| Num 6 | 持续回血开关（关闭不撤销回血） |
 | Num 7 | 瞬间研发开关（持续，仅当前玩家） |
 | Num 8 | 瞬间建造开关（持续，仅当前玩家） |
-| Num 9 | 瞬间生产单位（一次） |
+| Num 9 | 持续瞬间生产开关 |
 | Num 0 | 将 AI 单位与建筑设为 1 血 |
 | Num . | 游戏速度（0.5–10 倍）开关 |
-| Num + | 最大人口上限设为 200 |
+| Num + | 人口上限 200 开关（关闭恢复） |
 | Num - | 当前人口设为 0 |
 | Ctrl+Shift+Home | 启用／关闭功能快捷键（默认启用） |
 | — | 提示音开关（左下角，默认开启；操作成功与关闭开关使用不同提示音） |
@@ -98,9 +111,9 @@ This personal fork is based on upstream **`v185872-V3`** and targets **Build 185
 
 ### Local continuous-toggle build (Build 185872 V3)
 
-Version **1.0.0.42** groups features into resources, continuous modes and one-shot actions, replaces the cover area with useful connection information, and points the in-app GitHub link to this fork. UI code is split into focused files. It also removes the native title bar and adds integrated minimize/close buttons. Drag the title or header background to move the window. Minimize keeps continuous features running; close uses the normal restoration path and can be cancelled if restoration fails.
+Version **1.0.0.44** groups features into resources, continuous modes and one-shot actions, replaces the cover area with useful connection information, and points the in-app GitHub link to this fork. UI code is split into focused files. It also removes the native title bar and adds integrated minimize/close buttons. Drag the title or header background to move the window. Minimize keeps continuous features running; close uses the normal restoration path and can be cancelled if restoration fails.
 
-Instant Research and Instant Buildings are now independent, default-off switches. Click a switch or press `Num 7` / `Num 8` to toggle; newly started tasks are also affected while enabled. Only the current player's values and research queues are modified. Switching off or closing normally restores the exact saved values; changing matches disables both switches. Keep the trainer running while enabled. Force termination cannot restore values, and completed tasks are not undone. Instant Recruit remains a one-shot action. This local build targets game file version `101.103.54800.0`; run `./Test.ps1` for isolated memory and UI tests.
+Instant Research and Instant Buildings are now independent, default-off switches. Click a switch or press `Num 7` / `Num 8` to toggle; newly started tasks are also affected while enabled. Only the current player's values and research queues are modified. Switching off or closing normally restores the exact saved values; changing matches retains preferences and reapplies them to the newly validated session. Keep the trainer running while enabled. Force termination cannot restore values, and completed tasks are not undone. Instant Recruit is now a continuous toggle; stopping does not undo produced units. This local build targets game file version `101.103.54800.0`; run `./Test.ps1` for isolated memory and UI tests.
 
 > **Unofficial project:** This independently written trainer takes inspiration from FLiNG's UI style and workflow. It is **not** an official FLiNG release and is not affiliated with, endorsed by, or sponsored by FLiNG, Microsoft, or World's Edge.
 
@@ -111,19 +124,19 @@ This trainer is for **single-player use only**. It modifies the running game's m
 1. Download the EXE matching your game version from [Releases](https://github.com/xiaoqi419/AOE2-Trainer/releases), and verify its SHA-256 against that release's notes.
 2. Start the game and enter a **single-player match**, then run the trainer as administrator. Process detection in the main menu is normal; the trainer becomes ready after entering a match.
 3. Enter and apply wood, food, gold, and stone amounts **separately**. Other features have individual buttons and numpad hotkeys.
-4. Instant research and building are **persistent toggles**. Recruitment remains a **one-shot action** on the current queue.
+4. Instant research and building are **persistent toggles**. Recruitment is also a **continuous toggle**; turning it off only stops future acceleration.
 5. The top-right dropdown supports Simplified Chinese, Traditional Chinese, English, Russian, Spanish, Japanese, Arabic, French, German, and Korean. The trainer selects the Windows UI language on startup; unsupported languages default to English.
 
 | Hotkey | Feature |
 | --- | --- |
 | Num 1 / 2 / 3 / 4 | Edit wood, food, gold, and stone separately |
-| Num 6 | Restore health of your units and buildings |
+| Num 6 | Toggle continuous health (existing healing is not undone) |
 | Num 7 | Toggle continuous research (current player only) |
 | Num 8 | Toggle continuous construction (current player only) |
-| Num 9 | Instant recruit units (once) |
+| Num 9 | Toggle continuous recruitment |
 | Num 0 | Set AI units and buildings to 1 HP |
 | Num . | Toggle game speed (0.5–10×) |
-| Num + | Set maximum population cap to 200 |
+| Num + | Toggle population cap 200; off restores original |
 | Num - | Set current population to 0 |
 | Ctrl+Shift+Home | Enable/disable feature hotkeys (enabled by default) |
 | — | Sound effects toggle (bottom-left, on by default; distinct cues for successful actions and disabling a toggle) |

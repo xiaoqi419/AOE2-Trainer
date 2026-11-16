@@ -55,9 +55,9 @@ internal sealed partial class TrainerForm
         sidebar.Controls.Add(soundToggle);
         sidebar.Controls.Add(new Label
         {
-            Text = T("研究 / 建造仅作用于自己\r\n关闭开关后恢复原值\r\n仅限单人战局使用",
-                "研究 / 建造僅作用於自己\r\n關閉開關後恢復原值\r\n僅限單人戰局使用",
-                "Research / build: player only\r\nSwitch off to restore values\r\nSingle-player matches only"),
+            Text = T("研究 / 建造仅作用于自己\r\n关闭开关后恢复原值\r\n新对局自动沿用开关",
+                "研究 / 建造僅作用於自己\r\n關閉開關後恢復原值\r\n新對局自動沿用開關",
+                "Research / build: player only\r\nSwitch off to restore values\r\nReapply in new solo matches"),
             ForeColor = Color.Silver, Location = new Point(16, 416), Size = new Size(188, 86)
         });
         sidebar.Controls.Add(new Label
@@ -117,12 +117,12 @@ internal sealed partial class TrainerForm
         AddInstantRow(right, ref y, "Num 8", T("瞬间建造（仅自己）", "瞬間建造（僅自己）", "Instant Buildings - player only"), buildingsToggle);
         AddSpeedRow(right, ref y);
 
-        AddSection(right, ref y, "actionsSection", T("即时操作", "即時操作", "One-shot actions"));
-        AddRow(right, ref y, "Num 6", T("恢复单位与建筑生命值", "恢復單位與建築生命值", "Restore Units & Buildings Health"), null, RestoreHealthAction);
-        AddRow(right, ref y, "Num 9", T("瞬间生产单位（一次）", "瞬間生產單位（一次）", "Instant Recruit Units (Once)"), null, InstantRecruitAction);
-        AddRow(right, ref y, "Num 0", T("AI 单位与建筑设为 1 血", "AI 單位與建築設為 1 血", "Set AI Units & Buildings to 1 HP"), null, EmptyAiHealthAction);
-        AddRow(right, ref y, "Num +", T("最大人口上限 200", "最大人口上限 200", "Max Population Cap: 200"), null, MaxPopulationAction);
-        AddRow(right, ref y, "Num -", T("当前人口设为 0（无限人口）", "當前人口設為 0（無限人口）", "Set Population To 0 (Infinite Population)"), null, ZeroPopulationAction);
+        AddSection(right, ref y, "actionsSection", T("其他功能（关闭不撤销已完成效果）", "其他功能（關閉不撤銷已完成效果）", "Other features (off does not undo)"));
+        AddInstantRow(right, ref y, "Num 6", T("持续回血（关闭停止回血）", "持续回血（关闭停止回血）", "Continuous health (off stops)"), healthToggle);
+        AddInstantRow(right, ref y, "Num 9", T("瞬间生产（关闭停止加速）", "瞬间生产（关闭停止加速）", "Instant recruitment (off stops)"), recruitToggle);
+        AddRow(right, ref y, "Num 0", T("AI 设为 1 血（确认执行）", "AI 單位與建築設為 1 血", "Set AI Units & Buildings to 1 HP"), null, EmptyAiHealthAction);
+        AddInstantRow(right, ref y, "Num +", T("人口上限 200（关闭还原）", "人口上限 200（关闭还原）", "Population cap 200 (off restores)"), populationToggle);
+        AddRow(right, ref y, "Num -", T("人口归零（确认执行）", "當前人口設為 0（無限人口）", "Set Population To 0 (Infinite Population)"), null, ZeroPopulationAction);
 
         hotkeyHint.Location = new Point(0, 510);hotkeyHint.Size = new Size(542, 22);
         hotkeyHint.TextAlign = ContentAlignment.MiddleCenter;hotkeyHint.ForeColor = Color.Silver;

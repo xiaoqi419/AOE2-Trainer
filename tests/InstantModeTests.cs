@@ -251,11 +251,107 @@ internal static class InstantModeTests
             }
         }
     }
+    static void PopulationSwitchRestoresAndChecksSession()
+    {
+        MethodInfo update=typeof(ContinuousInstantModes).GetMethod("UpdateModes",BindingFlags.Instance|BindingFlags.NonPublic);
+        Assert(update!=null,"Extended continuous modes are missing.");
+        using(var game=new MemoryGame())
+        {
+            var modes=new ContinuousInstantModes();var c=game.Context;
+            Engine.SetResource(c,4,125f);byte[] original=MemoryGame.Raw(c,4);
+            update.Invoke(modes,new object[]{c,false,false,true,true});
+            Assert(Engine.Resource(c,4)==200f,"Population cap not applied.");
+            update.Invoke(modes,new object[]{c,false,false,false,true});
+            Assert(Equal(original,MemoryGame.Raw(c,4)),"Population cap not restored exactly.");
+            Assert(modes.Active,"Periodic-only session is not tracked.");
+            c.Player+=16;
+            ExpectFailure(delegate{update.Invoke(modes,new object[]{c,false,false,false,true});});
+            Assert(!modes.Active,"Session change did not stop periodic mode.");
+        }
+    }
+    static void AdditionalSwitchesAndCancelConfirmation()
+    {
+        using(var form=new TrainerForm())
+        {
+            Field("closing").SetValue(form,true);
+            foreach(string name in new[]{"healthToggle","recruitToggle","populationToggle"})
+                Assert(Field(name)!=null,"Missing switch "+name);
+            foreach(string method in new[]{"RestoreHealthAction","InstantRecruitAction","MaxPopulationAction"})
+            {
+                var action=typeof(TrainerForm).GetMethod(method,BindingFlags.Instance|BindingFlags.NonPublic);
+                action.Invoke(form,null);action.Invoke(form,null);
+            }
+            foreach(string name in new[]{"healthToggle","recruitToggle","populationToggle"})
+                Assert(!((SpeedToggleSwitch)Field(name).GetValue(form)).IsOn,"Switch did not turn back off.");
+            Field("confirmIrreversible").SetValue(form,new Func<string,bool>(delegate{return false;}));
+            string status=(string)((Label)Field("status").GetValue(form)).Text;
+            typeof(TrainerForm).GetMethod("EmptyAiHealthAction",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(form,null);
+            typeof(TrainerForm).GetMethod("ZeroPopulationAction",BindingFlags.Instance|BindingFlags.NonPublic).Invoke(form,null);
+            Assert(((Label)Field("status").GetValue(form)).Text==status,"Cancelled operation still started.");
+        }
+    }
+    static void WaitingPreservesPreferences()
+    {
+        var method=typeof(TrainerForm).GetMethod("HandleContinuousError",BindingFlags.Instance|BindingFlags.NonPublic);
+        Assert(method!=null,"Missing transition-aware error handler.");
+        using(var form=new TrainerForm())
+        {
+            Field("closing").SetValue(form,true);
+            foreach(string name in new[]{"researchRequested","buildingsRequested","healthRequested","recruitRequested","populationRequested","speedRequested"})Field(name).SetValue(form,true);
+            method.Invoke(form,new object[]{"当前不在有效的单人对局中。"});
+            method.Invoke(form,new object[]{"对局已改变，持续功能已关闭。"});
+            foreach(string name in new[]{"researchRequested","buildingsRequested","healthRequested","recruitRequested","populationRequested","speedRequested"})Assert((bool)Field(name).GetValue(form),"Lost preference: "+name);
+            Field("healthRequested").SetValue(form,false);
+            method.Invoke(form,new object[]{"请先启动一局游戏"});
+            Assert(!(bool)Field("healthRequested").GetValue(form),"Manual off while waiting was lost.");
+            method.Invoke(form,new object[]{"研发速度原值未通过校验，未修改。"});
+            Assert(!(bool)Field("researchRequested").GetValue(form),"Validation failure must not auto-retry writes.");
+        }
+    }
+    static void NewMatchRestoresItsOwnBaseline()
+    {
+        using(var first=new MemoryGame())using(var second=new MemoryGame())
+        {
+            var modes=new ContinuousInstantModes();
+            Engine.SetResource(first.Context,4,125);Engine.SetResource(second.Context,4,175);
+            Engine.SetResource(second.Context,86,0.25f);Engine.SetResource(second.Context,195,2f);
+            modes.UpdateModes(first.Context,true,true,true,true);
+            byte[] old=MemoryGame.Raw(first.Context,195);
+            ExpectFailure(delegate{modes.UpdateModes(second.Context,true,true,true,true);});
+            // The next polling cycle reapplies the retained request to the validated new context.
+            modes.UpdateModes(second.Context,true,true,true,true);
+            Assert(Engine.Resource(second.Context,4)==200&&Engine.Resource(second.Context,195)==1000,"New match did not receive preferences.");
+            modes.Update(second.Context,false,false);
+            Assert(Engine.Resource(second.Context,4)==175&&Engine.Resource(second.Context,86)==0.25f&&Engine.Resource(second.Context,195)==2f,"Restoration reused previous match baseline.");
+            Assert(Equal(old,MemoryGame.Raw(first.Context,195)),"Wrote into old match memory.");
+        }
+    }
+    static void SpeedRebindAndRestore()
+    {
+        using(var a=new MemoryGame())using(var b=new MemoryGame())
+        {
+            Action<MemoryGame,float> setup=delegate(MemoryGame g,float value)
+            {
+                ulong manager=g.Allocate(1024),settings=g.Allocate(64);
+                Engine.Write(g.Context.Handle,g.Context.Player+8,BitConverter.GetBytes(manager));
+                Engine.Write(g.Context.Handle,manager+0x228,BitConverter.GetBytes(settings));
+                Engine.Write(g.Context.Handle,settings+12,BitConverter.GetBytes(value));
+                Engine.Write(g.Context.Handle,settings+16,BitConverter.GetBytes(value));
+            };
+            setup(a,1.5f);setup(b,2f);
+            var speed=new SessionSpeedOverride();speed.Update(a.Context,true,4f);
+            speed.Update(b.Context,true,4f);
+            Assert(Engine.GetGameSpeed(a.Context)==4f,"Stale game speed address was restored.");
+            Assert(Engine.GetGameSpeed(b.Context)==4f,"New game speed not applied.");
+            speed.Update(b.Context,false,4f);
+            Assert(Engine.GetGameSpeed(b.Context)==2f,"New game's original speed was not restored.");
+        }
+    }
     [STAThread] static int Main()
     {
         Application.EnableVisualStyles();
         Action[] tests={DisabledDoesNotWrite,PersistentAndIndependentRestore,CampaignZeroAndReenable,RejectInvalidBaseline,SessionChangeNeverWritesOldAddresses,FailedRestoreCanBeRetried,ResearchQueueChecksLiveOwner,HotkeysToggleBothWays,ToggleUiAndLanguageRebuild};
-        var allTests=new System.Collections.Generic.List<Action>(tests);allTests.Add(BorderlessWindowButtons);allTests.Add(ForkLinkAndGroupedLayout);tests=allTests.ToArray();
+        var allTests=new System.Collections.Generic.List<Action>(tests);allTests.Add(BorderlessWindowButtons);allTests.Add(ForkLinkAndGroupedLayout);allTests.Add(PopulationSwitchRestoresAndChecksSession);allTests.Add(AdditionalSwitchesAndCancelConfirmation);allTests.Add(WaitingPreservesPreferences);allTests.Add(NewMatchRestoresItsOwnBaseline);allTests.Add(SpeedRebindAndRestore);tests=allTests.ToArray();
         foreach(Action test in tests)
         {
             try{test();Console.WriteLine("PASS "+test.Method.Name);}

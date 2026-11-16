@@ -36,7 +36,7 @@ internal sealed partial class TrainerForm
     void BuildUi()
     {
         SuspendLayout();
-        foreach(Control reused in new Control[]{processInfo,status,hotkeyHint,soundLabel,soundToggle,speedToggle,researchToggle,buildingsToggle,speedEditor,wood,food,gold,stone,speed})
+        foreach(Control reused in new Control[]{processInfo,status,hotkeyHint,soundLabel,soundToggle,speedToggle,researchToggle,buildingsToggle,healthToggle,recruitToggle,populationToggle,speedEditor,wood,food,gold,stone,speed})
             if(reused.Parent!=null)reused.Parent.Controls.Remove(reused);
         while(Controls.Count>0){Control old=Controls[0];Controls.RemoveAt(0);old.Dispose();}
         var header=new Panel{Dock=DockStyle.Top,Height=70,BackColor=Color.FromArgb(28,30,31)};Controls.Add(header);

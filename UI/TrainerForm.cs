@@ -18,6 +18,11 @@ internal sealed partial class TrainerForm : Form
     readonly SpeedToggleSwitch soundToggle=new SpeedToggleSwitch{IsOn=true,Size=new Size(36,18)};
     readonly SpeedToggleSwitch speedToggle=new SpeedToggleSwitch();
     readonly SpeedToggleSwitch researchToggle=new SpeedToggleSwitch(),buildingsToggle=new SpeedToggleSwitch();
+    readonly SpeedToggleSwitch healthToggle=new SpeedToggleSwitch(),recruitToggle=new SpeedToggleSwitch(),populationToggle=new SpeedToggleSwitch();
+    volatile bool healthRequested,recruitRequested;
+    bool populationRequested,speedRequested;
+    readonly SessionSpeedOverride sessionSpeed=new SessionSpeedOverride();
+    Func<string,bool> confirmIrreversible;
     readonly ContinuousInstantModes instantModes=new ContinuousInstantModes();
     readonly System.Windows.Forms.Timer instantTimer=new System.Windows.Forms.Timer();
     Task instantWorker;
@@ -28,7 +33,7 @@ internal sealed partial class TrainerForm : Form
     readonly TextBox speedEditor=new TextBox();
     readonly NumericUpDown wood=ResourceBox(),food=ResourceBox(),gold=ResourceBox(),stone=ResourceBox(),speed=SpeedBox();
     readonly System.Windows.Forms.Timer detector=new System.Windows.Forms.Timer();
-    int hookedPid,detectedPid,language,speedPid;bool hookBusy,hotkeysEnabled=true,speedOverrideActive;ulong speedPlayer;float savedSpeed;
+    int hookedPid,detectedPid,language;bool hookBusy,hotkeysEnabled=true;
     Func<string> statusMessage;DateTime statusTime;bool statusError;
     DateTime nextCacheRefresh=DateTime.MinValue,nextAttachAttempt=DateTime.MinValue;
     const int WM_HOTKEY=0x0312;
@@ -42,6 +47,10 @@ internal sealed partial class TrainerForm : Form
         soundToggle.Click+=delegate{soundToggle.IsOn=!soundToggle.IsOn;};
         researchToggle.Click+=delegate{InstantResearchAction();};
         buildingsToggle.Click+=delegate{InstantBuildingsAction();};
+        healthToggle.Click+=delegate{RestoreHealthAction();};
+        recruitToggle.Click+=delegate{InstantRecruitAction();};
+        populationToggle.Click+=delegate{MaxPopulationAction();};
+        confirmIrreversible=message=>MessageBox.Show(this,message,T("确认单次操作","確認單次操作","Confirm one-shot action"),MessageBoxButtons.OKCancel,MessageBoxIcon.Warning,MessageBoxDefaultButton.Button2)==DialogResult.OK;
         instantTimer.Interval=250;instantTimer.Tick+=delegate{ApplyInstantModes();};
         speedEditor.Leave+=delegate{CommitSpeedEditor();};
         speedEditor.KeyDown+=delegate(object sender,KeyEventArgs e){if(e.KeyCode==Keys.Enter){CommitSpeedEditor();e.Handled=true;e.SuppressKeyPress=true;}else if(e.KeyCode==Keys.Escape){speedEditor.Text=FormatSpeed();e.Handled=true;e.SuppressKeyPress=true;}};
@@ -77,52 +86,35 @@ internal sealed partial class TrainerForm : Form
     }
     void UpdateSpeedToggle()
     {
-        speedToggle.IsOn=speedOverrideActive;
-        speedToggle.AccessibleName=speedOverrideActive?T("关闭游戏速度","關閉遊戲速度","Disable game speed override"):T("开启游戏速度","開啟遊戲速度","Enable game speed override");
+        speedToggle.IsOn=speedRequested;
+        speedToggle.AccessibleName=T("游戏速度开关（跨对局沿用）","遊戲速度開關（跨對局沿用）","Game speed preference (across matches)");
     }
     void ToggleSpeed()
     {
-        if(!CommitSpeedEditor())return;
-        try
-        {
-            if(!speedOverrideActive)
-            {
-                float requested=(float)speed.Value;
-                using(GameContext c=Engine.Open(true))
-                {
-                    float original=Engine.GetGameSpeed(c);
-                    Engine.SetGameSpeed(c,requested);
-                    savedSpeed=original;speedPid=c.Game.Id;speedPlayer=c.Player;speedOverrideActive=true;
-                }
-                SetStatus(()=>T("游戏速度已开启：","遊戲速度已開啟：","Game speed enabled: ")+requested.ToString("0.##",CultureInfo.InvariantCulture)+"x");PlaySuccessFeedback();
-            }
-            else
-            {
-                using(GameContext c=Engine.Open(true))
-                {
-                    if(c.Game.Id!=speedPid||c.Player!=speedPlayer)throw new InvalidOperationException("对局已改变，无法恢复先前速度。");
-                    Engine.SetGameSpeed(c,savedSpeed);speedOverrideActive=false;
-                }
-                SetStatus(()=>T("已恢复对局原速度","已恢復對局原速度","Original game speed restored"));PlayDisableFeedback();
-            }
-            UpdateSpeedToggle();
-        }
-        catch(Exception e){string detail=e.Message;SetStatus(()=>T("错误：","錯誤：","Error: ")+Localization.Error(detail,language),true);}
+        if(!speedRequested&&!CommitSpeedEditor())return;
+        speedRequested=!speedRequested;UpdateSpeedToggle();InstantRequestChanged();
     }
     void UpdateActiveSpeed()
     {
-        if(!speedOverrideActive)return;
-        try
+        if(speedRequested)InstantRequestChanged();
+    }
+    static bool IsSessionWaiting(string error)
+    {
+        return error.StartsWith("当前不在有效的单人对局")||error.StartsWith("请先启动一局游戏")||error.StartsWith("对局已改变");
+    }
+    void HandleContinuousError(string error)
+    {
+        appliedSpeed=appliedResearch=appliedBuildings=appliedHealth=appliedRecruit=appliedPopulation=false;
+        hookedPid=0;nextCacheRefresh=DateTime.MinValue;
+        if(!IsSessionWaiting(error))
         {
-            float requested=(float)speed.Value;
-            using(GameContext c=Engine.Open(true))
-            {
-                if(c.Game.Id!=speedPid||c.Player!=speedPlayer)throw new InvalidOperationException("对局已改变，无法继续修改速度。");
-                Engine.SetGameSpeed(c,requested);
-            }
-            SetStatus(()=>T("游戏速度已设为 ","遊戲速度已設為 ","Game speed set to ")+requested.ToString("0.##",CultureInfo.InvariantCulture)+"x");
+            researchRequested=buildingsRequested=healthRequested=recruitRequested=populationRequested=speedRequested=false;
+            instantRevision++;
         }
-        catch(Exception e){string detail=e.Message;SetStatus(()=>T("错误：","錯誤：","Error: ")+Localization.Error(detail,language),true);}
+        nextInstantAttempt=DateTime.UtcNow.AddSeconds(1);
+        UpdateInstantToggles();UpdateSpeedToggle();UpdateProcessInfo();
+        if(IsSessionWaiting(error))SetStatus(()=>T("设置已保留，等待新对局后自动应用。","設定已保留，等待新對局後自動套用。","Preferences retained; waiting for the next match."));
+        else SetStatus(()=>T("应用失败，已停止自动启用：","套用失敗，已停止自動啟用：","Apply failed; automatic enable stopped: ")+Localization.Error(error,language),true);
     }
 
     void SetResource(int id,Func<string> name,NumericUpDown box)
@@ -131,25 +123,30 @@ internal sealed partial class TrainerForm : Form
         Run(()=>T("设置","設定","Set ")+name(),delegate{Engine.SetResource(id,value);},
             ()=>name()+T("已设为 ","已設為 "," set to ")+value.ToString("0.##",CultureInfo.InvariantCulture));
     }
-    void RestoreHealthAction(){Run(()=>T("恢复生命值","恢復生命值","Restore Health"),delegate{Engine.RestoreHealth();},()=>T("生命值恢复完成","生命值恢復完成","Health restored"));}
+    void RestoreHealthAction(){healthRequested=!healthRequested;InstantRequestChanged();}
     void InstantResearchAction(){researchRequested=!researchRequested;InstantRequestChanged();}
     void InstantBuildingsAction(){buildingsRequested=!buildingsRequested;InstantRequestChanged();}
     void InstantRequestChanged()
     {
         instantRevision++;nextInstantAttempt=DateTime.MinValue;
-        UpdateInstantToggles();ApplyInstantModes();
+        UpdateInstantToggles();
+        SetStatus(()=>T("正在应用开关；关闭仅停止后续效果。","正在套用開關；關閉僅停止後續效果。","Applying switches; off only stops future effects."));
+        ApplyInstantModes();
     }
     void UpdateInstantToggles()
     {
+        healthToggle.IsOn=healthRequested;recruitToggle.IsOn=recruitRequested;populationToggle.IsOn=populationRequested;
+        healthToggle.AccessibleName=T("持续回血","持續回血","Continuous health");recruitToggle.AccessibleName=T("持续生产","持續生產","Continuous recruitment");populationToggle.AccessibleName=T("人口上限开关","人口上限開關","Population cap toggle");
         researchToggle.IsOn=researchRequested;buildingsToggle.IsOn=buildingsRequested;
         researchToggle.AccessibleName=T("瞬间研发开关","瞬間研發開關","Instant Research toggle");
         buildingsToggle.AccessibleName=T("瞬间建造开关","瞬間建造開關","Instant Buildings toggle");
     }
     void ApplyInstantModes()
     {
-        if(closing||instantBusy||DateTime.UtcNow<nextInstantAttempt||(!researchRequested&&!buildingsRequested&&!instantModes.Active))return;
-        bool research=researchRequested,buildings=buildingsRequested;int revision=instantRevision;
-        bool changed=research!=appliedResearch||buildings!=appliedBuildings;
+        if(closing||instantBusy||DateTime.UtcNow<nextInstantAttempt||(!researchRequested&&!buildingsRequested&&!healthRequested&&!recruitRequested&&!populationRequested&&!speedRequested&&!sessionSpeed.Active&&!instantModes.Active))return;
+        bool research=researchRequested,buildings=buildingsRequested,health=healthRequested,recruit=recruitRequested,population=populationRequested;int revision=instantRevision;
+        bool speedEnabled=speedRequested;float speedValue=(float)speed.Value;
+        bool changed=speedEnabled!=appliedSpeed||speedValue!=appliedSpeedValue||research!=appliedResearch||buildings!=appliedBuildings||health!=appliedHealth||recruit!=appliedRecruit||population!=appliedPopulation;
         instantBusy=true;
         instantWorker=Task.Run(delegate
         {
@@ -160,16 +157,19 @@ internal sealed partial class TrainerForm : Form
                 {
                     try
                     {
-                        instantModes.Update(c,research,buildings);
-                        if(research&&DateTime.UtcNow>=nextResearchTick)
+                        instantModes.UpdateModes(c,research,buildings,population,health||recruit);
+                        sessionSpeed.Update(c,speedEnabled,speedValue);
+                        if((research||health||recruit)&&DateTime.UtcNow>=nextResearchTick)
                         {
                             nextResearchTick=DateTime.UtcNow.AddMilliseconds(500);
-                            Engine.FinishCurrentResearch(c);
+                            if(!closing&&research&&researchRequested)Engine.FinishCurrentResearch(c);
+                            if(!closing&&health&&healthRequested)Engine.MaintainHealth(c);
+                            if(!closing&&recruit&&recruitRequested)Engine.FinishCurrentRecruitment(c);
                         }
                     }
                     catch
                     {
-                        instantModes.Update(c,false,false);
+                        try{instantModes.Update(c,false,false);}finally{sessionSpeed.Update(c,false,speedValue);}
                         throw;
                     }
                 }
@@ -177,7 +177,7 @@ internal sealed partial class TrainerForm : Form
             catch(Exception e)
             {
                 error=e.Message;
-                if(error.StartsWith("当前不在有效的单人对局")||Process.GetProcessesByName("AoE2DE_s").Length==0)instantModes.Forget();
+                if(IsSessionWaiting(error)){instantModes.Forget();sessionSpeed.Forget();}
             }
             if(closing)return;
             try
@@ -188,19 +188,15 @@ internal sealed partial class TrainerForm : Form
                     instantBusy=false;
                     if(error!=null)
                     {
-                        researchRequested=buildingsRequested=appliedResearch=appliedBuildings=false;
-                        instantRevision++;nextInstantAttempt=DateTime.UtcNow.AddSeconds(1);UpdateInstantToggles();
-                        SetStatus(()=>(instantModes.Active?T("关闭失败，正在重试恢复原值：","關閉失敗，正在重試恢復原值：","Restore pending; retrying: "):
-                            T("持续功能已关闭：","持續功能已關閉：","Continuous modes stopped: "))+Localization.Error(error,language),true);
+                        HandleContinuousError(error);
                     }
                     else
                     {
-                        appliedResearch=research;appliedBuildings=buildings;
+                        appliedSpeed=speedEnabled;appliedSpeedValue=speedValue;appliedResearch=research;appliedBuildings=buildings;appliedHealth=health;appliedRecruit=recruit;appliedPopulation=population;
                         if(changed&&revision==instantRevision)
                         {
-                            SetStatus(()=>T("瞬间研发：","瞬間研發：","Instant Research: ")+(research?T("开启","開啟","on"):T("关闭","關閉","off"))+
-                                T("；瞬间建造：","；瞬間建造：","; Instant Buildings: ")+(buildings?T("开启","開啟","on"):T("关闭","關閉","off")));
-                            if(research||buildings)PlaySuccessFeedback();else PlayDisableFeedback();
+                            SetStatus(()=>T("开关已更新；关闭只停止后续效果，不撤销已完成操作。","開關已更新；不撤銷已完成操作。","Switches updated; stopping does not undo completed actions."));
+                            if(research||buildings||health||recruit||population)PlaySuccessFeedback();else PlayDisableFeedback();
                         }
                     }
                 });
@@ -208,11 +204,12 @@ internal sealed partial class TrainerForm : Form
             catch(InvalidOperationException){}
         });
     }
-    bool appliedResearch,appliedBuildings;
-    void InstantRecruitAction(){Run(()=>T("瞬间生产单位","瞬間生產單位","Instant Recruit Units"),delegate{Engine.InstantRecruitOnce();},()=>T("当前生产队列已完成","當前生產佇列已完成","Current production queue completed"));}
-    void EmptyAiHealthAction(){Run(()=>T("清空 AI 生命值","清空 AI 生命值","Empty AI Health"),delegate{Engine.EmptyAiHealth();},()=>T("AI 单位与建筑已设为 1 血","AI 單位與建築已設為 1 血","AI units and buildings set to 1 HP"));}
-    void MaxPopulationAction(){Run(()=>T("最大人口","最大人口","Max Population"),delegate{Engine.SetResource(4,200);},()=>T("人口上限已设为 200","人口上限已設為 200","Population cap set to 200"));}
-    void ZeroPopulationAction(){Run(()=>T("人口归零","人口歸零","Zero Population"),delegate{Engine.SetResource(11,0);},()=>T("当前人口已设为 0","當前人口已設為 0","Current population set to 0"));}
+    bool appliedResearch,appliedBuildings,appliedHealth,appliedRecruit,appliedPopulation,appliedSpeed;
+    float appliedSpeedValue;
+    void InstantRecruitAction(){recruitRequested=!recruitRequested;InstantRequestChanged();}
+    void EmptyAiHealthAction(){if(!confirmIrreversible(T("将其他玩家的单位和建筑设为 1 血，无法撤销。是否执行？","將其他玩家的單位和建築設為 1 血，無法撤銷。是否執行？","Set other players to 1 HP? This cannot be undone.")))return;Run(()=>T("清空 AI 生命值","清空 AI 生命值","Empty AI Health"),delegate{Engine.EmptyAiHealth();},()=>T("AI 单位与建筑已设为 1 血","AI 單位與建築已設為 1 血","AI units and buildings set to 1 HP"));}
+    void MaxPopulationAction(){populationRequested=!populationRequested;InstantRequestChanged();}
+    void ZeroPopulationAction(){if(!confirmIrreversible(T("人口归零是一次性修改，无法可靠还原；后续生产会继续改变人口。是否执行？","人口歸零無法可靠還原。是否執行？","Zero population cannot be reliably undone. Continue?")))return;Run(()=>T("人口归零","人口歸零","Zero Population"),delegate{Engine.SetResource(11,0);},()=>T("当前人口已设为 0","當前人口已設為 0","Current population set to 0"));}
     void Run(Func<string> name,Action work,Func<string> success)
     {
         SetStatus(()=>name()+T("处理中……","處理中……"," processing..."));
@@ -240,7 +237,7 @@ internal sealed partial class TrainerForm : Form
         if(ps.Length!=1)
         {
             bool wasDetected=detectedPid!=0;
-            hookedPid=detectedPid=0;speedOverrideActive=false;UpdateSpeedToggle();UpdateProcessInfo();
+            hookedPid=detectedPid=0;UpdateSpeedToggle();UpdateProcessInfo();
             if(wasDetected)SetStatus(()=>T("等待游戏进程……","等待遊戲進程……","Waiting for game process..."));
             return;
         }
@@ -255,7 +252,7 @@ internal sealed partial class TrainerForm : Form
                 using(GameContext c=Engine.Open(false))player=c.Player;
                 BeginInvoke((Action)delegate
                 {
-                    if(speedOverrideActive&&(speedPid!=pid||speedPlayer!=player)){speedOverrideActive=false;UpdateSpeedToggle();}
+                    UpdateSpeedToggle();
                     hookedPid=pid;nextCacheRefresh=DateTime.UtcNow.AddSeconds(60);UpdateProcessInfo();
                     SetStatus(()=>T("已连接游戏，对象缓存 ","已連接遊戲，物件快取 ","Game hooked, object cache: ")+count);
                 });
@@ -269,7 +266,7 @@ internal sealed partial class TrainerForm : Form
                     if(detail.StartsWith("仅支持游戏版本"))SetStatus(()=>T("仅支持游戏版本 101.103.54800.0。检测到：","僅支援遊戲版本 101.103.54800.0。偵測到：","Only game version 101.103.54800.0 is supported. Detected: ")+detail.Substring(detail.LastIndexOf('：')+1),true);
                     else if(detail.StartsWith("当前不在有效的单人对局"))
                     {
-                        if(speedOverrideActive){speedOverrideActive=false;UpdateSpeedToggle();}
+                        UpdateSpeedToggle();
                         SetStatus(()=>T("已检测游戏，等待进入单人战局……","已偵測遊戲，等待進入單人戰局……","Game detected; waiting for a single-player match..."));
                     }
                 });
@@ -312,24 +309,23 @@ internal sealed partial class TrainerForm : Form
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
         detector.Stop();instantTimer.Stop();instantTimer.Dispose();
-        if(speedOverrideActive)try{using(GameContext c=Engine.Open(true))if(c.Game.Id==speedPid&&c.Player==speedPlayer)Engine.SetGameSpeed(c,savedSpeed);}catch{}
         UnregisterFeatureKeys();Native.UnregisterHotKey(Handle,13);base.OnFormClosed(e);
     }
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         closing=true;instantTimer.Stop();
         if(instantWorker!=null)instantWorker.Wait();
-        if(instantModes.Active)
+        if(instantModes.Active||sessionSpeed.Active)
         {
-            try{using(GameContext c=Engine.Open(true))instantModes.Update(c,false,false);}
+            try{using(GameContext c=Engine.Open(true)){try{instantModes.Update(c,false,false);}finally{sessionSpeed.Update(c,false,1f);}}}
             catch(Exception error)
             {
-                if(error.Message.StartsWith("当前不在有效的单人对局"))instantModes.Forget();
+                if(IsSessionWaiting(error.Message)){instantModes.Forget();sessionSpeed.Forget();}
                 // A terminated game or replaced session has no live override to restore.
-                if(instantModes.Active&&Process.GetProcessesByName("AoE2DE_s").Length!=0)
+                if((instantModes.Active||sessionSpeed.Active)&&Process.GetProcessesByName("AoE2DE_s").Length!=0)
                 {
                     e.Cancel=true;closing=false;instantBusy=false;
-                    researchRequested=buildingsRequested=false;UpdateInstantToggles();instantTimer.Start();
+                    researchRequested=buildingsRequested=healthRequested=recruitRequested=populationRequested=speedRequested=false;UpdateInstantToggles();instantTimer.Start();
                     string detail=error.Message;
                     SetStatus(()=>T("恢复原值失败，请保持修改器开启后重试：","恢復原值失敗，請保持修改器開啟後重試：","Restore failed; keep the trainer open and retry: ")+detail,true);
                     return;

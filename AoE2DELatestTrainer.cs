@@ -14,7 +14,7 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("Age of Empires II Definitive Edition Plus 12 Trainer V3")]
 [assembly: AssemblyDescription("Single-player trainer for AoE2DE 101.103.54800.0 with continuous research and construction toggles")]
 [assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.42")]
+[assembly: AssemblyFileVersion("1.0.0.44")]
 
 internal static class Native
 {
@@ -95,7 +95,7 @@ internal static class Engine
             if(player<0x10000)throw new InvalidOperationException("当前不在有效的单人对局中。");
             ulong resources=U64(h,player+0x98);int playerId=I32(h,player+0x648);
             if(resources<0x10000||playerId<1||playerId>8)throw new InvalidOperationException("当前不在有效的单人对局中。");
-            lock(CacheLock){bool changed=cachedPlayer!=player;cachedPid=p.Id;cachedModule=mb;cachedGlobal=global;cachedPlayer=player;cachedResources=resources;cachedPlayerId=playerId;if(changed){cachedObjects.Clear();cachedObjectRegions.Clear();objectCacheTime=DateTime.MinValue;}}
+            lock(CacheLock){bool changed=cachedPlayer!=player||cachedResources!=resources||cachedPlayerId!=playerId;cachedPid=p.Id;cachedModule=mb;cachedGlobal=global;cachedPlayer=player;cachedResources=resources;cachedPlayerId=playerId;if(changed){cachedObjects.Clear();cachedObjectRegions.Clear();objectCacheTime=DateTime.MinValue;}}
             return new GameContext{Game=p,Handle=h,ModuleBase=mb,Player=player,Resources=resources,PlayerId=playerId};
         }
         catch{Native.CloseHandle(h);throw;}
@@ -211,6 +211,23 @@ internal static class Engine
     internal static string RestoreHealth()
     {
         using(GameContext c=Open(true)){int u=0,b=0;foreach(GameObjectInfo o in ScanObjectsFast(c)){if(o.Owner!=c.Player)continue;try{ulong raw=U64(c.Handle,o.Address+0x130);Write(c.Handle,o.Address+0x130,BitConverter.GetBytes(EncodeHealth(raw,9999f)));if(o.Unit)u++;else b++;}catch{}}return string.Format("已恢复：{0} 个单位、{1} 栋建筑",u,b);}
+    }
+    internal static void MaintainHealth(GameContext c)
+    {
+        foreach(GameObjectInfo o in ScanObjectsFast(c))
+        {
+            ulong owner,raw;
+            if(!TryU64(c.Handle,o.Address+0x18,out owner)||owner!=c.Player||
+               !TryU64(c.Handle,o.Address+0x130,out raw))continue;
+            float hp=DecodeHealth(raw);
+            if(float.IsNaN(hp)||hp<=0||hp>=9999f)continue;
+            Write(c.Handle,o.Address+0x130,BitConverter.GetBytes(EncodeHealth(raw,9999f)));
+        }
+    }
+    internal static void FinishCurrentRecruitment(GameContext c)
+    {
+        int active;
+        FinishQueues(c,PlayerBuildings(c),RecruitActionKind,RecruitElapsedOffset,100000f,out active);
     }
     internal static string EmptyAiHealth()
     {
